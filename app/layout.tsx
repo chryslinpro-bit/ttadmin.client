@@ -6,6 +6,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Tiako dia Tiako — Espace admin",
   description: "Gérez les commandes, les produits et les accès de votre boutique.",
+  icons: {
+    icon: "/Logo.jfif.jpg",
+    shortcut: "/Logo.jfif.jpg",
+    apple: "/Logo.jfif.jpg",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

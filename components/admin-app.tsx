@@ -146,6 +146,7 @@ export default function AdminApp() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
@@ -158,6 +159,15 @@ export default function AdminApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileSidebarOpen]);
 
   const reloadData = useCallback(async (activeUser: User) => {
     const [nextProducts, nextOrders, nextUsers, nextFacebookSettings] = await Promise.all([
@@ -175,6 +185,7 @@ export default function AdminApp() {
   }, []);
 
   function navigateToSection(nextSection: Section) {
+    setMobileSidebarOpen(false);
     setQuery("");
     setError("");
     setNotice("");
@@ -713,20 +724,42 @@ export default function AdminApp() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-lockup">
-          <Image
-            src="/Logo.jfif.jpg"
-            alt="Tiako dia Tiako"
-            width={56}
-            height={56}
-            className="brand-logo"
-            priority
-          />
-          <div>
-            <p className="brand-name">Tiako dia Tiako</p>
-            <span className="brand-caption">ESPACE ADMIN</span>
+      {mobileSidebarOpen && (
+        <button
+          aria-label="Fermer le menu de navigation"
+          className="sidebar-backdrop"
+          onClick={() => setMobileSidebarOpen(false)}
+          type="button"
+        />
+      )}
+      <aside
+        aria-label="Navigation principale"
+        className={`sidebar${mobileSidebarOpen ? " sidebar-open" : ""}`}
+        id="primary-navigation"
+      >
+        <div className="sidebar-header">
+          <div className="brand-lockup">
+            <Image
+              src="/Logo.jfif.jpg"
+              alt="Tiako dia Tiako"
+              width={56}
+              height={56}
+              className="brand-logo"
+              priority
+            />
+            <div>
+              <p className="brand-name">Tiako dia Tiako</p>
+              <span className="brand-caption">ESPACE ADMIN</span>
+            </div>
           </div>
+          <button
+            aria-label="Fermer le menu"
+            className="icon-button mobile-sidebar-close"
+            onClick={() => setMobileSidebarOpen(false)}
+            type="button"
+          >
+            <Icon name="close" />
+          </button>
         </div>
         <div className="nav-label">MENU PRINCIPAL</div>
         <nav className="side-nav" aria-label="Navigation principale">
@@ -764,25 +797,22 @@ export default function AdminApp() {
 
       <div className="mobile-topbar">
         <div className="mobile-topbar-head">
+          <button
+            aria-controls="primary-navigation"
+            aria-expanded={mobileSidebarOpen}
+            aria-label={mobileSidebarOpen ? "Fermer le menu" : "Ouvrir le menu"}
+            className="icon-button mobile-menu-toggle"
+            onClick={() => setMobileSidebarOpen((open) => !open)}
+            type="button"
+          >
+            <Icon name={mobileSidebarOpen ? "close" : "menu"} />
+          </button>
           <div className="brand-lockup">
             <Image src="/Logo.jfif.jpg" alt="" width={42} height={42} className="brand-logo" />
             <div><p className="brand-name">Tiako dia Tiako</p><span className="brand-caption">ESPACE ADMIN</span></div>
           </div>
           <button className="icon-button" onClick={() => setLogoutDialogOpen(true)} type="button" aria-label="Se déconnecter"><Icon name="logout" /></button>
         </div>
-        <nav className="mobile-nav" aria-label="Navigation principale">
-          {visibleNavigation.map((item) => (
-            <button
-              aria-current={section === item.id ? "page" : undefined}
-              className={`mobile-nav-item ${section === item.id ? "mobile-nav-item-active" : ""}`}
-              key={item.id}
-              onClick={() => navigateToSection(item.id)}
-              type="button"
-            >
-              <Icon name={item.icon} />{item.label}
-            </button>
-          ))}
-        </nav>
       </div>
 
       <main className="main-panel">
@@ -1916,7 +1946,7 @@ function FacebookSection({
         <div className="panel-header table-panel-heading">
           <div>
             <h2>Message automatique</h2>
-            <p>Envoyé en privé après un commentaire ou un message sans produit reconnu.</p>
+            <p>Envoyé en privé après un commentaire ou un message sans produit reconnu. Il invite le client à préciser l’article souhaité.</p>
           </div>
         </div>
         <form className="dialog-form" onSubmit={saveGreeting}>
@@ -1926,7 +1956,7 @@ function FacebookSection({
             id="facebook-greeting"
             maxLength={2000}
             onChange={(event) => setGreetingDraft(event.target.value)}
-            placeholder="Bonjour, merci de nous avoir contactés. Nous revenons vers vous rapidement."
+            placeholder="Bonjour ! Merci de nous avoir contactés. Quel produit souhaitez-vous commander ?"
             rows={4}
             value={greetingDraft}
           />
