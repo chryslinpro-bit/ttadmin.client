@@ -71,6 +71,8 @@ const statusLabels: Record<OrderStatus, string> = {
   canceled: "Annulée",
 };
 
+type OrderFilter = "all" | "reserved" | "payed" | "to-deliver" | "delivered" | "canceled";
+
 function isAdmin(user: User) {
   return user.type === "admin";
 }
@@ -249,6 +251,9 @@ export default function AdminApp() {
       ? orders.filter(
           (order) =>
             order.id.toLocaleLowerCase().includes(value) ||
+            order.customerName?.toLocaleLowerCase().includes(value) ||
+            order.customerPhone?.toLocaleLowerCase().includes(value) ||
+            order.deliveryAddress?.toLocaleLowerCase().includes(value) ||
             order.items.some((item) =>
               item.product?.nom.toLocaleLowerCase().includes(value),
             ),
@@ -1180,20 +1185,164 @@ function OrdersSection({
   onUpdateDelivery: (order: Order) => void;
   onUpdateStatus: (order: Order, status: OrderStatus) => void;
 }) {
+  const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
+  const filters: { id: OrderFilter; label: string; count: number }[] = [
+    { id: "all", label: "Toutes", count: orders.length },
+    { id: "reserved", label: "En attente", count: orders.filter((order) => order.status === "reserved").length },
+    { id: "payed", label: "Payées", count: orders.filter((order) => order.status === "payed").length },
+    { id: "to-deliver", label: "À livrer", count: orders.filter((order) => order.status !== "canceled" && !order.deliveredAt).length },
+    { id: "delivered", label: "Livrées", count: orders.filter((order) => Boolean(order.deliveredAt)).length },
+    { id: "canceled", label: "Annulées", count: orders.filter((order) => order.status === "canceled").length },
+  ];
+  const visibleOrders = orders.filter((order) => {
+    switch (activeFilter) {
+      case "reserved":
+      case "payed":
+      case "canceled":
+        return order.status === activeFilter;
+      case "to-deliver":
+        return order.status !== "canceled" && !order.deliveredAt;
+      case "delivered":
+        return Boolean(order.deliveredAt);
+      default:
+        return true;
+    }
+  });
+  const pendingCount = orders.filter((order) => order.status === "reserved").length;
+  const toDeliverCount = orders.filter((order) => order.status !== "canceled" && !order.deliveredAt).length;
+  const deliveredCount = orders.filter((order) => Boolean(order.deliveredAt)).length;
+
   return (
     <>
       <div className="page-heading">
-        <div><span className="eyebrow">SUIVI &amp; ORGANISATION</span><h1>Commandes</h1><p>Gardez un œil sur chaque commande de votre boutique.</p></div>
+        <div><span className="eyebrow">SUIVI &amp; ORGANISATION</span><h1>Commandes</h1><p>Suivez les paiements, les coordonnées clients et les livraisons.</p></div>
         <button className="btn btn-primary" onClick={onAdd} type="button"><Icon name="plus" /> Nouvelle commande</button>
       </div>
-      <div className="table-summary"><span><strong>{formatNumber(orders.length)}</strong> commande{orders.length === 1 ? "" : "s"}</span><span className="table-filter-label"><Icon name="filter" /> Résultats</span></div>
-      <section className="panel table-panel">
-        <OrdersTable
-          orders={orders}
-          onEdit={onEdit}
-          onUpdateDelivery={onUpdateDelivery}
-          onUpdateStatus={onUpdateStatus}
-        />
+      <section className="orders-overview" aria-label="Vue d’ensemble des commandes">
+        <article className="orders-overview-card">
+          <span className="orders-overview-label">Commandes affichées</span>
+          <strong>{formatNumber(orders.length)}</strong>
+          <span className="orders-overview-note">Selon votre recherche</span>
+        </article>
+        <article className="orders-overview-card orders-overview-pending">
+          <span className="orders-overview-label">En attente</span>
+          <strong>{formatNumber(pendingCount)}</strong>
+          <span className="orders-overview-note">À traiter</span>
+        </article>
+        <article className="orders-overview-card orders-overview-delivery">
+          <span className="orders-overview-label">À livrer</span>
+          <strong>{formatNumber(toDeliverCount)}</strong>
+          <span className="orders-overview-note">Non annulées</span>
+        </article>
+        <article className="orders-overview-card orders-overview-done">
+          <span className="orders-overview-label">Livrées</span>
+          <strong>{formatNumber(deliveredCount)}</strong>
+          <span className="orders-overview-note">Livraison confirmée</span>
+        </article>
+      </section>
+      <section className="orders-list-panel" aria-label="Liste des commandes">
+        <div className="orders-list-header">
+          <div>
+            <h2>Suivi des commandes</h2>
+            <p>{formatNumber(visibleOrders.length)} résultat{visibleOrders.length === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        <div className="orders-filters" role="group" aria-label="Filtrer les commandes">
+          {filters.map((filter) => (
+            <button
+              aria-pressed={activeFilter === filter.id}
+              className={`orders-filter${activeFilter === filter.id ? " orders-filter-active" : ""}`}
+              key={filter.id}
+              onClick={() => setActiveFilter(filter.id)}
+              type="button"
+            >
+              {filter.label}<span>{formatNumber(filter.count)}</span>
+            </button>
+          ))}
+        </div>
+        {visibleOrders.length === 0 ? (
+          <EmptyState
+            title={orders.length === 0 ? "Aucune commande trouvée" : "Aucune commande dans cette catégorie"}
+            text={orders.length === 0 ? "Essayez une autre recherche ou créez une nouvelle commande." : "Choisissez un autre filtre pour consulter les commandes."}
+          />
+        ) : (
+          <div className="orders-list">
+            {visibleOrders.map((order) => {
+              const quantity = order.items.reduce((total, item) => total + item.quantity, 0);
+              return (
+                <article className="order-card" key={order.id}>
+                  <div className="order-card-heading">
+                    <div className="order-card-reference">
+                      <strong>#{order.id.slice(0, 8).toLocaleUpperCase()}</strong>
+                      <span>{formatDate(order.createdAt)}</span>
+                    </div>
+                    <div className="order-card-tags">
+                      <StatusBadge status={order.status} />
+                      {order.deliveredAt && <span className="delivery-complete-badge">Livrée</span>}
+                      {order.facebookChannel && (
+                        <span className="order-channel">
+                          {order.facebookChannel === "messenger" ? "Messenger" : "Facebook"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="order-card-content">
+                    <div className="order-card-products">
+                      <span className="order-card-label">Articles · {quantity} unité{quantity === 1 ? "" : "s"}</span>
+                      <ul>
+                        {order.items.map((item) => (
+                          <li key={item.id}>
+                            <strong>{item.product?.nom ?? "Produit supprimé"}</strong>
+                            {item.productColor && <span>{item.productColor.name}</span>}
+                            <span>× {item.quantity}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="order-card-customer">
+                      <span className="order-card-label">Client &amp; livraison</span>
+                      <strong>{order.customerName || (order.facebookUserId ? "Client Facebook" : "Client à renseigner")}</strong>
+                      {order.customerPhone ? (
+                        <a href={`tel:${order.customerPhone}`}>{order.customerPhone}</a>
+                      ) : (
+                        <span className="order-card-muted">Téléphone à renseigner</span>
+                      )}
+                      {order.deliveryAddress ? (
+                        <span className="order-card-address">{order.deliveryAddress}</span>
+                      ) : (
+                        <span className="order-card-muted">Adresse à renseigner</span>
+                      )}
+                      {order.deliveredAt && <span className="order-card-delivery-date">Livrée le {formatDateTime(order.deliveredAt)}</span>}
+                    </div>
+                  </div>
+                  <div className="order-card-footer">
+                    <label className="order-card-status-control">
+                      <span>Statut</span>
+                      <select
+                        aria-label={`Modifier le statut de la commande ${order.id}`}
+                        className="status-select"
+                        onChange={(event) => onUpdateStatus(order, event.target.value as OrderStatus)}
+                        value={order.status}
+                      >
+                        {Object.entries(statusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                      </select>
+                    </label>
+                    <div className="order-card-actions">
+                      {!order.deliveredAt && order.status !== "canceled" && (
+                        <button className="btn btn-ghost order-delivery-button" onClick={() => onUpdateDelivery(order)} type="button">
+                          Confirmer la livraison
+                        </button>
+                      )}
+                      <button className="text-link order-edit-button" onClick={() => onEdit(order)} type="button">
+                        Modifier
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
     </>
   );
