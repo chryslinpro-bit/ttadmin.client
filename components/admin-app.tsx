@@ -66,12 +66,12 @@ function getSectionFromPath(pathname: string): Section {
 }
 
 const statusLabels: Record<OrderStatus, string> = {
-  reserved: "En attente",
+  reserved: "Réservée",
   payed: "Payée",
   canceled: "Annulée",
 };
 
-type OrderFilter = "all" | "reserved" | "payed" | "to-deliver" | "delivered" | "canceled";
+type OrderFilter = "all" | "reserved" | "payed" | "canceled";
 
 function isAdmin(user: User) {
   return user.type === "admin";
@@ -117,16 +117,6 @@ function formatDate(value: string) {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
-}
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   }).format(new Date(value));
 }
 
@@ -632,25 +622,6 @@ export default function AdminApp() {
     }
   }
 
-  async function markOrderDelivered(order: Order) {
-    if (!user || order.deliveredAt || order.status === "canceled") return;
-    setError("");
-    try {
-      await apiRequest<Order>(`/orders/${order.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ delivered: true }),
-      });
-      await reloadData(user);
-      setNotice(`La commande #${order.id.slice(0, 8).toLocaleUpperCase()} a été marquée comme livrée.`);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Impossible d’enregistrer la livraison.",
-      );
-    }
-  }
-
   async function requestPasswordOtp(
     currentPassword: string,
     newPassword: string,
@@ -870,7 +841,6 @@ export default function AdminApp() {
               users={users}
               user={user}
               onNavigate={navigateToSection}
-              onUpdateDelivery={markOrderDelivered}
               onUpdateStatus={updateOrderStatus}
             />
           )}
@@ -879,7 +849,6 @@ export default function AdminApp() {
               orders={filteredOrders}
               onAdd={() => setDialog({ type: "order" })}
               onEdit={(order) => setDialog({ type: "order", order })}
-              onUpdateDelivery={markOrderDelivered}
               onUpdateStatus={updateOrderStatus}
             />
           )}
@@ -1067,7 +1036,6 @@ function DashboardSection({
   users,
   user,
   onNavigate,
-  onUpdateDelivery,
   onUpdateStatus,
 }: {
   orders: Order[];
@@ -1075,7 +1043,6 @@ function DashboardSection({
   users: User[];
   user: User;
   onNavigate: (section: Section) => void;
-  onUpdateDelivery: (order: Order) => void;
   onUpdateStatus: (order: Order, status: OrderStatus) => void;
 }) {
   const paidOrders = orders.filter((order) => order.status === "payed");
@@ -1116,7 +1083,7 @@ function DashboardSection({
       </div>
 
       <section className="stats-grid" aria-label="Indicateurs clés">
-        <StatCard label="Commandes totales" value={formatNumber(orders.length)} note={`${formatNumber(waitingOrders.length)} en attente`} icon="bag" tone="pink" />
+        <StatCard label="Commandes totales" value={formatNumber(orders.length)}         note={`${formatNumber(waitingOrders.length)} réservée${waitingOrders.length === 1 ? "" : "s"}`} icon="bag" tone="pink" />
         <StatCard label="Total des ventes" value={formatAriary(totalSales)} note={`${formatNumber(paidOrders.length)} commande${paidOrders.length === 1 ? "" : "s"} payée${paidOrders.length === 1 ? "" : "s"}`} icon="check" tone="gold" />
         <StatCard label="Produits en boutique" value={formatNumber(products.length)} note={`${formatNumber(lowStock.length)} stock${lowStock.length === 1 ? "" : "s"} à surveiller`} icon="package" tone="lavender" />
         <StatCard label="Comptes équipe" value={formatNumber(isAdmin(user) ? users.length : 1)} note={isAdmin(user) ? "Comptes actifs" : "Votre compte"} icon="users" tone="peach" />
@@ -1171,7 +1138,6 @@ function DashboardSection({
         </div>
         <OrdersTable
           orders={orders.slice(0, 5)}
-          onUpdateDelivery={onUpdateDelivery}
           onUpdateStatus={onUpdateStatus}
           compact
         />
@@ -1206,22 +1172,18 @@ function OrdersSection({
   orders,
   onAdd,
   onEdit,
-  onUpdateDelivery,
   onUpdateStatus,
 }: {
   orders: Order[];
   onAdd: () => void;
   onEdit: (order: Order) => void;
-  onUpdateDelivery: (order: Order) => void;
   onUpdateStatus: (order: Order, status: OrderStatus) => void;
 }) {
   const [activeFilter, setActiveFilter] = useState<OrderFilter>("all");
   const filters: { id: OrderFilter; label: string; count: number }[] = [
     { id: "all", label: "Toutes", count: orders.length },
-    { id: "reserved", label: "En attente", count: orders.filter((order) => order.status === "reserved").length },
+    { id: "reserved", label: "Réservées", count: orders.filter((order) => order.status === "reserved").length },
     { id: "payed", label: "Payées", count: orders.filter((order) => order.status === "payed").length },
-    { id: "to-deliver", label: "À livrer", count: orders.filter((order) => order.status !== "canceled" && !order.deliveredAt).length },
-    { id: "delivered", label: "Livrées", count: orders.filter((order) => Boolean(order.deliveredAt)).length },
     { id: "canceled", label: "Annulées", count: orders.filter((order) => order.status === "canceled").length },
   ];
   const visibleOrders = orders.filter((order) => {
@@ -1230,22 +1192,16 @@ function OrdersSection({
       case "payed":
       case "canceled":
         return order.status === activeFilter;
-      case "to-deliver":
-        return order.status !== "canceled" && !order.deliveredAt;
-      case "delivered":
-        return Boolean(order.deliveredAt);
       default:
         return true;
     }
   });
   const pendingCount = orders.filter((order) => order.status === "reserved").length;
-  const toDeliverCount = orders.filter((order) => order.status !== "canceled" && !order.deliveredAt).length;
-  const deliveredCount = orders.filter((order) => Boolean(order.deliveredAt)).length;
 
   return (
     <>
       <div className="page-heading">
-        <div><span className="eyebrow">SUIVI &amp; ORGANISATION</span><h1>Commandes</h1><p>Suivez les paiements, les coordonnées clients et les livraisons.</p></div>
+        <div><span className="eyebrow">SUIVI &amp; ORGANISATION</span><h1>Commandes</h1><p>Suivez les réservations, les paiements et les annulations.</p></div>
         <button className="btn btn-primary" onClick={onAdd} type="button"><Icon name="plus" /> Nouvelle commande</button>
       </div>
       <section className="orders-overview" aria-label="Vue d’ensemble des commandes">
@@ -1255,19 +1211,9 @@ function OrdersSection({
           <span className="orders-overview-note">Selon votre recherche</span>
         </article>
         <article className="orders-overview-card orders-overview-pending">
-          <span className="orders-overview-label">En attente</span>
+          <span className="orders-overview-label">Réservées</span>
           <strong>{formatNumber(pendingCount)}</strong>
           <span className="orders-overview-note">À traiter</span>
-        </article>
-        <article className="orders-overview-card orders-overview-delivery">
-          <span className="orders-overview-label">À livrer</span>
-          <strong>{formatNumber(toDeliverCount)}</strong>
-          <span className="orders-overview-note">Non annulées</span>
-        </article>
-        <article className="orders-overview-card orders-overview-done">
-          <span className="orders-overview-label">Livrées</span>
-          <strong>{formatNumber(deliveredCount)}</strong>
-          <span className="orders-overview-note">Livraison confirmée</span>
         </article>
       </section>
       <section className="orders-list-panel" aria-label="Liste des commandes">
@@ -1308,7 +1254,6 @@ function OrdersSection({
                     </div>
                     <div className="order-card-tags">
                       <StatusBadge status={order.status} />
-                      {order.deliveredAt && <span className="delivery-complete-badge">Livrée</span>}
                       {order.facebookChannel && (
                         <span className="order-channel">
                           {order.facebookChannel === "messenger" ? "Messenger" : "Facebook"}
@@ -1342,7 +1287,6 @@ function OrdersSection({
                       ) : (
                         <span className="order-card-muted">Adresse à renseigner</span>
                       )}
-                      {order.deliveredAt && <span className="order-card-delivery-date">Livrée le {formatDateTime(order.deliveredAt)}</span>}
                     </div>
                   </div>
                   <div className="order-card-footer">
@@ -1358,11 +1302,6 @@ function OrdersSection({
                       </select>
                     </label>
                     <div className="order-card-actions">
-                      {!order.deliveredAt && order.status !== "canceled" && (
-                        <button className="btn btn-ghost order-delivery-button" onClick={() => onUpdateDelivery(order)} type="button">
-                          Confirmer la livraison
-                        </button>
-                      )}
                       <button className="text-link order-edit-button" onClick={() => onEdit(order)} type="button">
                         Modifier
                       </button>
@@ -1381,13 +1320,11 @@ function OrdersSection({
 function OrdersTable({
   orders,
   onEdit,
-  onUpdateDelivery,
   onUpdateStatus,
   compact = false,
 }: {
   orders: Order[];
   onEdit?: (order: Order) => void;
-  onUpdateDelivery: (order: Order) => void;
   onUpdateStatus: (order: Order, status: OrderStatus) => void;
   compact?: boolean;
 }) {
@@ -1431,11 +1368,6 @@ function OrdersTable({
                       Coordonnées à compléter
                     </small>
                   )}
-                  {order.deliveredAt && (
-                    <small className="delivery-timestamp">
-                      Livrée le {formatDateTime(order.deliveredAt)}
-                    </small>
-                  )}
                 </div>
               </td>
               )}
@@ -1454,15 +1386,6 @@ function OrdersTable({
                       {Object.entries(statusLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                     </select>
                     {onEdit && <button className="text-link" onClick={() => onEdit(order)} type="button">Modifier</button>}
-                    {!order.deliveredAt && order.status !== "canceled" && (
-                      <button
-                        className="text-link"
-                        onClick={() => onUpdateDelivery(order)}
-                        type="button"
-                      >
-                        Marquer livrée
-                      </button>
-                    )}
                   </div>
                 </td>
               )}
@@ -2664,7 +2587,7 @@ function OrderDialog({
           }
           value={status}
         >
-          <option value="reserved">En attente</option>
+          <option value="reserved">Réservée</option>
           <option value="payed">Payée</option>
           <option value="canceled">Annulée</option>
         </select>

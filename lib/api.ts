@@ -55,7 +55,6 @@ export interface Order {
   customerName: string | null;
   deliveryAddress: string | null;
   customerPhone: string | null;
-  deliveredAt: string | null;
   items: OrderItem[];
   facebookUserId?: string | null;
   facebookChannel?: "comment" | "messenger" | null;
